@@ -16,5 +16,4 @@ func init() {
 }
 func main() {
 	ctrl.RunController()
-	return
 }

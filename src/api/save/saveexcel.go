@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"time"
 
 	"Yosyos/src/model"
 
@@ -24,35 +25,63 @@ func ProcessData(c *gin.Context) {
 
 	var data []model.TaxData
 	for _, item := range excelResponse {
-		finalTaxAmt, ok := item["Final Total Amt"].(float64)
-		if !ok {
-			log.Printf("Failed to assert Final Tax Amt: %v", item["Final Total Amt"])
-			finalTaxAmt = 0
-		}
+		finalAmt, _ := item["Final Amt"].(float64)
+		finalTaxAmt, _ := item["Final Tax Amt"].(float64)
+		finalTotalAmt, _ := item["Final Total Amt"].(float64)
 
 		data = append(data, model.TaxData{
-			SlipType:    item["Slip Type"].(string),
-			StmtNo:      item["Stmt.No."].(string),
-			FinalTaxAmt: finalTaxAmt,
+			SlipType:      item["Slip Type"].(string),
+			VendorInvNo:   item["Vendor Inv No."].(string),
+			CustomerName:  item["Customer Name"].(string),
+			StmtNo:        item["Stmt.No."].(string),
+			LocCur:        item["Loc Cur"].(string),
+			Proxy:         item["Proxy Y/N"].(string),
+			FinalAmt:      finalAmt,
+			FinalTaxAmt:   finalTaxAmt,
+			FinalTotalAmt: finalTotalAmt,
+			AccRefNo:      item["Acc Ref No."].(string),
 		})
 	}
 
-	groupedData := make(map[string]float64)
+	groupedData := make(map[string]model.TaxData)
+
 	for _, entry := range data {
-		key := fmt.Sprintf("%s-%s", entry.SlipType, entry.StmtNo)
-		groupedData[key] += entry.FinalTaxAmt
+		key := fmt.Sprintf("%s-%s", entry.Proxy, entry.StmtNo)
+
+		groupedData[key] = model.TaxData{
+			SlipType:      entry.SlipType,
+			VendorInvNo:   entry.VendorInvNo,
+			CustomerName:  entry.CustomerName,
+			StmtNo:        entry.StmtNo,
+			LocCur:        entry.LocCur,
+			AccRefNo:      entry.AccRefNo,
+			Proxy:         entry.Proxy,
+			FinalAmt:      groupedData[key].FinalAmt + entry.FinalAmt,
+			FinalTaxAmt:   groupedData[key].FinalTaxAmt + entry.FinalTaxAmt,
+			FinalTotalAmt: groupedData[key].FinalTotalAmt + entry.FinalTotalAmt,
+		}
 	}
 
 	var result []model.Response
-	for key, finalTaxAmt := range groupedData {
-		convertString := strconv.FormatFloat(finalTaxAmt, 'f', 2, 64)
-		splitKey := splitKey(key, "-")
+	for _, entry := range groupedData {
+		finalAmtStr := strconv.FormatFloat(entry.FinalAmt, 'f', 2, 64)
+		finalTaxAmtStr := strconv.FormatFloat(entry.FinalTaxAmt, 'f', 2, 64)
+		finalTotalAmtStr := strconv.FormatFloat(entry.FinalTotalAmt, 'f', 2, 64)
+
 		result = append(result, model.Response{
-			SlipType:    splitKey[0],
-			StmtNo:      splitKey[1],
-			FinalTaxAmt: convertString,
+			SlipType:      entry.SlipType,
+			VendorInvNo:   entry.VendorInvNo,
+			CustomerName:  entry.CustomerName,
+			StmtNo:        entry.StmtNo,
+			LocCur:        entry.LocCur,
+			AccRefNo:      entry.AccRefNo,
+			FinalAmt:      finalAmtStr,
+			FinalTaxAmt:   finalTaxAmtStr,
+			FinalTotalAmt: finalTotalAmtStr,
 		})
 	}
+
+	// Simpan ke Excel
 	err = saveToExcel(result)
 	if err != nil {
 		log.Println("Gagal menyimpan ke Excel:", err)
@@ -63,29 +92,11 @@ func ProcessData(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-func splitKey(key string, delimiter string) []string {
-	return split(key, delimiter)
-}
-
-func split(input string, delimiter string) []string {
-	splitResult := make([]string, 0)
-	temp := ""
-	for _, char := range input {
-		if string(char) == delimiter {
-			splitResult = append(splitResult, temp)
-			temp = ""
-		} else {
-			temp += string(char)
-		}
-	}
-	splitResult = append(splitResult, temp)
-	return splitResult
-}
-
 func saveToExcel(data []model.Response) error {
 	folderPath := "src/DataExcel/Result"
-	fileName := "processed_data.xlsx"
+	fileName := "OutputLookup.xlsx"
 	filePath := fmt.Sprintf("%s/%s", folderPath, fileName)
+	paymentDate := time.Now().AddDate(0, 0, 1)
 
 	err := os.MkdirAll(folderPath, os.ModePerm)
 	if err != nil {
@@ -96,7 +107,8 @@ func saveToExcel(data []model.Response) error {
 
 	f.NewSheet("Sheet1")
 
-	headers := []string{"Slip Type", "Stmt.No.", "Final Tax Amt"}
+	headers := []string{"No", "Office", "Account Code", "Business Type", "Payment", "Payment date", "Operating Month", "Vendor Inv No.", "Vendor name (User)", "Vendor Inv Date", "STP", "Cur", "Gross", "Tax", "Amount ", "Acc Ref No", "Remark", "Date Payment "}
+
 	for col, header := range headers {
 		cell := fmt.Sprintf("%s1", string(rune('A'+col)))
 		f.SetCellValue("Sheet1", cell, header)
@@ -104,9 +116,24 @@ func saveToExcel(data []model.Response) error {
 
 	for i, item := range data {
 		row := i + 2
-		f.SetCellValue("Sheet1", fmt.Sprintf("A%d", row), item.SlipType)
-		f.SetCellValue("Sheet1", fmt.Sprintf("B%d", row), item.StmtNo)
-		f.SetCellValue("Sheet1", fmt.Sprintf("C%d", row), item.FinalTaxAmt)
+		f.SetCellValue("Sheet1", fmt.Sprintf("A%d", row), i+1)
+		f.SetCellValue("Sheet1", fmt.Sprintf("B%d", row), "Indonesia")
+		f.SetCellValue("Sheet1", fmt.Sprintf("C%d", row), item.SlipType)
+		f.SetCellValue("Sheet1", fmt.Sprintf("D%d", row), item.BusinessType)
+		f.SetCellValue("Sheet1", fmt.Sprintf("E%d", row), item.Payment)
+		f.SetCellValue("Sheet1", fmt.Sprintf("F%d", row), paymentDate.Format("2006-01-02"))
+		f.SetCellValue("Sheet1", fmt.Sprintf("G%d", row), item.OperatingMonth)
+		f.SetCellValue("Sheet1", fmt.Sprintf("H%d", row), item.VendorInvNo)
+		f.SetCellValue("Sheet1", fmt.Sprintf("I%d", row), item.CustomerName)
+		f.SetCellValue("Sheet1", fmt.Sprintf("J%d", row), item.VendorInvDate)
+		f.SetCellValue("Sheet1", fmt.Sprintf("K%d", row), item.StmtNo)
+		f.SetCellValue("Sheet1", fmt.Sprintf("L%d", row), item.LocCur)
+		f.SetCellValue("Sheet1", fmt.Sprintf("M%d", row), item.FinalAmt)
+		f.SetCellValue("Sheet1", fmt.Sprintf("N%d", row), item.FinalTaxAmt)
+		f.SetCellValue("Sheet1", fmt.Sprintf("O%d", row), item.FinalTotalAmt)
+		f.SetCellValue("Sheet1", fmt.Sprintf("P%d", row), item.AccRefNo)
+		f.SetCellValue("Sheet1", fmt.Sprintf("Q%d", row), item.Remark)
+		f.SetCellValue("Sheet1", fmt.Sprintf("R%d", row), item.DatePayment)
 	}
 
 	err = f.SaveAs(filePath)

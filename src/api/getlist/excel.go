@@ -58,8 +58,15 @@ func ExcelGet(c *gin.Context) ([]map[string]interface{}, error) {
 
 	targetHeaders := map[string]bool{
 		"Slip Type":       true,
+		"Vendor Inv No.":  true,
+		"Customer Name":   true,
 		"Stmt.No.":        true,
+		"Loc Cur":         true,
+		"Proxy Y/N":       true,
+		"Final Amt":       true,
+		"Final Tax Amt":   true,
 		"Final Total Amt": true,
+		"Acc Ref No.":     true,
 	}
 
 	var headers []string
@@ -97,14 +104,15 @@ func ExcelGet(c *gin.Context) ([]map[string]interface{}, error) {
 		rowData := make(map[string]interface{})
 		for header, index := range headerIndex {
 			if index < len(row) {
-				if header == "Final Total Amt" {
+				switch header {
+				case "Final Total Amt", "Final Tax Amt", "Final Amt":
 					value, err := strconv.ParseFloat(row[index], 64)
 					if err != nil {
 						log.Printf("Gagal mengonversi nilai '%s' menjadi float64: %v", row[index], err)
 						value = 0
 					}
 					rowData[header] = value
-				} else {
+				default:
 					rowData[header] = row[index]
 				}
 			}

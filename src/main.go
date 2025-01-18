@@ -1,22 +1,20 @@
 package main
 
 import (
-	get "Yosyos/src/api/getlist"
-	save "Yosyos/src/api/save"
-	A "Yosyos/src/api/test"
+	ctrl "Yosyos/src/controller"
 
-	"github.com/gin-gonic/gin"
+	logger "github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
 )
 
-func main() {
-	router := gin.New()
-
-	v1 := router.Group("/api/v1")
-	v1.Use(A.PassAuthMiddleware())
-	{
-		v1.GET("/common/excel/list", get.GetListExcelValue)
-		v1.GET("/common/excel/save", save.ProcessData)
+func init() {
+	viper.SetConfigFile("src/config/Config.json")
+	err := viper.ReadInConfig()
+	if err != nil {
+		logger.Fatal(err)
 	}
-
-	router.Run(":9696")
+}
+func main() {
+	ctrl.RunController()
+	return
 }
